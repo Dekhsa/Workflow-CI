@@ -27,7 +27,6 @@ jobs:
       - name: Install dependencies
         run: |
           pip install mlflow==2.19.0
-          pip install conda
       
       - name: Set up Conda
         uses: conda-incubator/setup-miniconda@v2
