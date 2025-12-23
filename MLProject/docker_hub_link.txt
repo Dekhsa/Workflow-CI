@@ -1,0 +1,2 @@
+# Docker Hub URL will be updated by CI/CD pipeline
+# Format: docker.io/<username>/<image-name>:<tag>

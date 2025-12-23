@@ -1,0 +1,16 @@
+name: fraud_env
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.12.7
+  - pip
+  - pip:
+      - mlflow==2.19.0
+      - scikit-learn
+      - pandas
+      - dagshub
+      - xgboost
+      - matplotlib
+      - seaborn
+      - numpy
