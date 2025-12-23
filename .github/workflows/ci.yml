@@ -27,6 +27,8 @@ jobs:
       
       - name: Run MLflow project
         shell: bash -l {0}
+        env:
+          DAGSHUB_USER_TOKEN: ${{ secrets.DAGSHUB_USER_TOKEN }}
         run: |
           mlflow run MLProject/ --env-manager=conda
       
