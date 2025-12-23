@@ -182,8 +182,14 @@ def evaluate_cv(best_params: dict, X: pd.DataFrame, y: pd.Series, path_prefix: s
 
 
 def tune_and_log(X: pd.DataFrame, y: pd.Series) -> None:
-    dagshub.init(repo_owner="Dekhsa", repo_name="Workflow-CI", mlflow=True)
-
+    # Set MLflow tracking URI from environment variable or DagsHub
+    # Format: https://dagshub.com/<owner>/<repo>.mlflow
+    mlflow_tracking_uri = os.getenv(
+        "MLFLOW_TRACKING_URI",
+        "https://dagshub.com/Dekhsa/Workflow-CI.mlflow"
+    )
+    mlflow.set_tracking_uri(mlflow_tracking_uri)
+    
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=TEST_SIZE, stratify=y, random_state=RANDOM_STATE
     )
