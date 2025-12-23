@@ -16,6 +16,7 @@ import mlflow
 import numpy as np
 import pandas as pd
 import seaborn as sns
+import tempfile
 from sklearn.metrics import (
     average_precision_score,
     confusion_matrix,
@@ -296,6 +297,12 @@ def tune_and_log(X: pd.DataFrame, y: pd.Series) -> None:
         # Log the trained pipeline as an MLflow model (creates MLmodel, model.pkl, env spec)
         mlflow.sklearn.log_model(best_model, artifact_path="model")
 
+        # Save to a temporary directory to avoid collisions across runs, then upload folder
+        with tempfile.TemporaryDirectory() as tmpdir:
+            local_model_dir = os.path.join(tmpdir, "model")
+            mlflow.sklearn.save_model(best_model, path=local_model_dir)
+            mlflow.log_artifacts(local_model_dir, artifact_path="model")
+
         print("Best Params:", grid.best_params_)
         print(
             f"F1: {f1:.4f}, Precision: {precision:.4f}, "
@@ -322,6 +329,19 @@ def tune_and_log(X: pd.DataFrame, y: pd.Series) -> None:
             f"CV Recall mean={cv_results['recall_mean']:.3f} std={cv_results['recall_std']:.3f}; "
             f"CV AUPRC mean={cv_results['auprc_mean']:.3f} std={cv_results['auprc_std']:.3f}"
         )
+
+
+def main() -> None:
+    try:
+        X, y = load_data(DATA_PATH)
+        tune_and_log(X, y)
+    except Exception as exc:  # pragma: no cover - runtime safeguard
+        print(f"Error during model tuning: {exc}", file=sys.stderr)
+        raise
+
+
+if __name__ == "__main__":
+    main()
 
 
 def main() -> None:
