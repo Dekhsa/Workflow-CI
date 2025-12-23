@@ -13,6 +13,22 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
       
+      - name: Set up Python 3.12.7
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12.7'
+      
+      - name: Check Env
+        run: |
+          python --version
+          pip --version
+          echo "Environment check completed"
+      
+      - name: Install dependencies
+        run: |
+          pip install mlflow==2.19.0
+          pip install conda
+      
       - name: Set up Conda
         uses: conda-incubator/setup-miniconda@v2
         with:
@@ -20,51 +36,35 @@ jobs:
           python-version: 3.12.7
           activate-environment: fraud_env
       
-      - name: Install MLflow
-        shell: bash -l {0}
-        run: |
-          pip install mlflow==2.19.0
-      
-      - name: Run MLflow project
+      - name: Run mlflow project
         shell: bash -l {0}
         env:
-          MLFLOW_TRACKING_URI: https://dagshub.com/Dekhsa/Workflow-CI.mlflow
+          MLFLOW_TRACKING_URI: https://dagshub.com/Dekhsa/SMSML_Muhamad-Dekhsa-Afnan.mlflow
           MLFLOW_TRACKING_USERNAME: ${{ secrets.DAGSHUB_USERNAME }}
           MLFLOW_TRACKING_PASSWORD: ${{ secrets.DAGSHUB_TOKEN }}
+          DAGSHUB_USER_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
         run: |
           mlflow run MLProject/ --env-manager=conda
       
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
-      
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v2
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-      
-      - name: Build Docker image from MLflow model
+      - name: Get latest MLflow run_id
         shell: bash -l {0}
         env:
-          MLFLOW_TRACKING_URI: https://dagshub.com/Dekhsa/Workflow-CI.mlflow
+          MLFLOW_TRACKING_URI: https://dagshub.com/Dekhsa/SMSML_Muhamad-Dekhsa-Afnan.mlflow
           MLFLOW_TRACKING_USERNAME: ${{ secrets.DAGSHUB_USERNAME }}
           MLFLOW_TRACKING_PASSWORD: ${{ secrets.DAGSHUB_TOKEN }}
+          DAGSHUB_USER_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
         run: |
-          # Get the latest run ID from MLflow using Python API
           python << 'EOF'
           import os
           import mlflow
           
-          # Set tracking URI
           mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI"))
           
-          # Get experiment
           experiment = mlflow.get_experiment_by_name("Default")
           if not experiment:
               print("Error: Default experiment not found!")
               exit(1)
           
-          # Get runs
           runs = mlflow.search_runs(
               experiment_ids=[experiment.experiment_id],
               order_by=["start_time DESC"],
@@ -81,29 +81,57 @@ jobs:
               f.write(run_id)
           EOF
           
+          echo "RUN_ID=$(cat /tmp/run_id.txt)" >> $GITHUB_ENV
+      
+      - name: Install Python dependencies
+        run: |
+          pip install mlflow==2.19.0 docker
+      
+      - name: Upload to GitHub
+        uses: actions/upload-artifact@v3
+        with:
+          name: mlflow-model-artifacts
+          path: |
+            mlruns/
+            MLProject/artifacts/
+          retention-days: 90
+      
+      - name: Build Docker Model
+        shell: bash -l {0}
+        env:
+          MLFLOW_TRACKING_URI: https://dagshub.com/Dekhsa/SMSML_Muhamad-Dekhsa-Afnan.mlflow
+          MLFLOW_TRACKING_USERNAME: ${{ secrets.DAGSHUB_USERNAME }}
+          MLFLOW_TRACKING_PASSWORD: ${{ secrets.DAGSHUB_TOKEN }}
+          DAGSHUB_USER_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
+        run: |
           RUN_ID=$(cat /tmp/run_id.txt)
           echo "Building Docker image for run: $RUN_ID"
           
-          # Build Docker image
           mlflow models build-docker \
             --model-uri "runs:/$RUN_ID/model" \
             --name "${{ secrets.DOCKER_USERNAME }}/fraud-detection-model"
       
-      - name: Push Docker image to Docker Hub
-        shell: bash -l {0}
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      
+      - name: Tag Docker image
         run: |
-          # Tag with latest and git SHA
           IMAGE_NAME="${{ secrets.DOCKER_USERNAME }}/fraud-detection-model"
           docker tag ${IMAGE_NAME}:latest ${IMAGE_NAME}:${{ github.sha }}
-          
-          # Push both tags
-          docker push ${IMAGE_NAME}:latest
-          docker push ${IMAGE_NAME}:${{ github.sha }}
-          
-          # Save Docker Hub URL to file
-          echo "docker.io/${IMAGE_NAME}:latest" > MLProject/docker_hub_link.txt
-          echo "docker.io/${IMAGE_NAME}:${{ github.sha }}" >> MLProject/docker_hub_link.txt
-          
+          echo "IMAGE_NAME=${IMAGE_NAME}" >> $GITHUB_ENV
+      
+      - name: Push Docker Image
+        run: |
+          docker push ${{ env.IMAGE_NAME }}:latest
+          docker push ${{ env.IMAGE_NAME }}:${{ github.sha }}
+      
+      - name: Post Log in to Docker Hub
+        run: |
+          echo "docker.io/${{ env.IMAGE_NAME }}:latest" > MLProject/docker_hub_link.txt
+          echo "docker.io/${{ env.IMAGE_NAME }}:${{ github.sha }}" >> MLProject/docker_hub_link.txt
           echo "Docker image pushed successfully!"
-          echo "Latest: docker.io/${IMAGE_NAME}:latest"
-          echo "SHA: docker.io/${IMAGE_NAME}:${{ github.sha }}"
+          echo "Latest: docker.io/${{ env.IMAGE_NAME }}:latest"
+          echo "SHA: docker.io/${{ env.IMAGE_NAME }}:${{ github.sha }}"
