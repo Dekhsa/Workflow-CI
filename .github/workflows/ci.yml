@@ -45,20 +45,48 @@ jobs:
       
       - name: Build Docker image from MLflow model
         shell: bash -l {0}
+        env:
+          MLFLOW_TRACKING_URI: https://dagshub.com/Dekhsa/Workflow-CI.mlflow
+          MLFLOW_TRACKING_USERNAME: ${{ secrets.DAGSHUB_USERNAME }}
+          MLFLOW_TRACKING_PASSWORD: ${{ secrets.DAGSHUB_TOKEN }}
         run: |
-          # Get the latest run ID
-          RUN_ID=$(mlflow runs list --experiment-id 0 --view all --output-format json | python -c "import sys, json; runs = json.load(sys.stdin); print(runs[0]['run_id'] if runs else '')")
+          # Get the latest run ID from MLflow using Python API
+          python << 'EOF'
+          import os
+          import mlflow
           
-          if [ -z "$RUN_ID" ]; then
-            echo "No MLflow runs found!"
-            exit 1
-          fi
+          # Set tracking URI
+          mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI"))
           
+          # Get experiment
+          experiment = mlflow.get_experiment_by_name("Default")
+          if not experiment:
+              print("Error: Default experiment not found!")
+              exit(1)
+          
+          # Get runs
+          runs = mlflow.search_runs(
+              experiment_ids=[experiment.experiment_id],
+              order_by=["start_time DESC"],
+              max_results=1
+          )
+          
+          if len(runs) == 0:
+              print("Error: No runs found!")
+              exit(1)
+          
+          run_id = runs.iloc[0]["run_id"]
+          print(f"Latest run ID: {run_id}")
+          with open("/tmp/run_id.txt", "w") as f:
+              f.write(run_id)
+          EOF
+          
+          RUN_ID=$(cat /tmp/run_id.txt)
           echo "Building Docker image for run: $RUN_ID"
           
           # Build Docker image
           mlflow models build-docker \
-            --model-uri "runs:/$RUN_ID/fraud_detection_model" \
+            --model-uri "runs:/$RUN_ID/model" \
             --name "${{ secrets.DOCKER_USERNAME }}/fraud-detection-model"
       
       - name: Push Docker image to Docker Hub
